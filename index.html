@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Zombie Survival</title>
+<title>Zombie Apocalypse</title>
 <style>
 body { margin:0; overflow:hidden; background:black; }
 canvas { display:block; background:#0f0f0f; }
@@ -26,13 +26,13 @@ font-size:18px;
 cursor:pointer;
 }
 
-#deathShop { display:none; }
+#deathShop{ display:none; }
 </style>
 </head>
 <body>
 
 <div id="menu">
-<h1>Zombie Survival</h1>
+<h1>Zombie Apocalypse</h1>
 <button onclick="startGame()">Start Game</button>
 </div>
 
@@ -54,9 +54,9 @@ canvas.width=window.innerWidth;
 canvas.height=window.innerHeight;
 
 let gameRunning=false;
+let keys={}, mouseDown=false;
 let mouseX=0, mouseY=0;
-let mouseDown=false;
-let keys={};
+let currentWeapon="rifle";
 
 let player={
 x:0,y:0,size:20,
@@ -69,12 +69,9 @@ maxHits:10,
 hits:0
 };
 
-let zombies=[];
-let bullets=[];
-let kills=0;
-let lastShot=0;
+let zombies=[], bullets=[], flames=[];
+let kills=0, lastShot=0;
 
-// START
 function startGame(){
 document.getElementById("menu").style.display="none";
 resetWorld();
@@ -87,8 +84,7 @@ player.x=0;
 player.y=0;
 player.hits=0;
 player.ammo=player.maxAmmo;
-zombies=[];
-bullets=[];
+zombies=[]; bullets=[]; flames=[];
 kills=0;
 spawnWave();
 }
@@ -97,6 +93,8 @@ spawnWave();
 document.addEventListener("keydown",e=>{
 keys[e.key.toLowerCase()]=true;
 if(e.key==="r") reload();
+if(e.key==="1") currentWeapon="rifle";
+if(e.key==="2") currentWeapon="flame";
 });
 document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 document.addEventListener("mousemove",e=>{
@@ -106,17 +104,17 @@ mouseY=e.clientY;
 document.addEventListener("mousedown",()=>mouseDown=true);
 document.addEventListener("mouseup",()=>mouseDown=false);
 
-// SHOOT AUTO
+// SHOOT
 function shoot(){
 if(!gameRunning) return;
-if(player.reloading) return;
-if(player.ammo<=0) return;
 
+let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
+
+if(currentWeapon==="rifle"){
+if(player.reloading||player.ammo<=0) return;
 let now=Date.now();
 if(now-lastShot<90) return;
 lastShot=now;
-
-let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
 
 bullets.push({
 x:player.x,
@@ -124,14 +122,26 @@ y:player.y,
 dx:Math.cos(angle)*13,
 dy:Math.sin(angle)*13
 });
-
 player.ammo--;
 }
 
-function reload(){
-if(player.reloading) return;
-if(player.ammo===player.maxAmmo) return;
+if(currentWeapon==="flame"){
+let now=Date.now();
+if(now-lastShot<40) return;
+lastShot=now;
 
+flames.push({
+x:player.x,
+y:player.y,
+dx:Math.cos(angle)*6,
+dy:Math.sin(angle)*6,
+life:25
+});
+}
+}
+
+function reload(){
+if(player.reloading||player.ammo===player.maxAmmo) return;
 player.reloading=true;
 setTimeout(()=>{
 player.ammo=player.maxAmmo;
@@ -139,28 +149,47 @@ player.reloading=false;
 },1000);
 }
 
-// SPAWN LOTS OF ZOMBIES
-function spawnZombie(isBoss=false){
+// SPAWN
+function spawnZombie(type="normal"){
 let angle=Math.random()*Math.PI*2;
 let distance=800;
 
-zombies.push({
+let z={
 x:player.x+Math.cos(angle)*distance,
 y:player.y+Math.sin(angle)*distance,
-size:isBoss?40:20,
-speed:isBoss?0.7:1.2,
-health:isBoss?15:2,
-boss:isBoss
-});
+type:type
+};
+
+if(type==="normal"){
+z.size=20; z.speed=1.2; z.health=2;
+}
+if(type==="fast"){
+z.size=18; z.speed=2; z.health=1;
+}
+if(type==="tank"){
+z.size=30; z.speed=0.7; z.health=8;
+}
+if(type==="exploder"){
+z.size=22; z.speed=1.5; z.health=2;
+}
+if(type==="boss"){
+z.size=40; z.speed=0.8; z.health=20;
+}
+
+zombies.push(z);
 }
 
 function spawnWave(){
-for(let i=0;i<20;i++){ // 10x more chaos
-spawnZombie(false);
+for(let i=0;i<20;i++){
+let r=Math.random();
+if(r<0.6) spawnZombie("normal");
+else if(r<0.75) spawnZombie("fast");
+else if(r<0.9) spawnZombie("tank");
+else spawnZombie("exploder");
 }
 }
 
-// UPDATE LOOP
+// UPDATE
 function update(){
 if(!gameRunning) return;
 
@@ -176,7 +205,7 @@ if(mouseDown) shoot();
 ctx.save();
 ctx.translate(canvas.width/2-player.x,canvas.height/2-player.y);
 
-// ALLEY STYLE BACKGROUND
+// BACKGROUND
 for(let i=-2000;i<2000;i+=200){
 ctx.fillStyle="#181818";
 ctx.fillRect(i,-2000,100,4000);
@@ -188,6 +217,15 @@ ctx.beginPath();
 ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
 ctx.fill();
 
+// VISIBLE GUN
+let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
+ctx.save();
+ctx.translate(player.x,player.y);
+ctx.rotate(angle);
+ctx.fillStyle=currentWeapon==="rifle"?"black":"orange";
+ctx.fillRect(0,-4,35,8);
+ctx.restore();
+
 // ZOMBIES
 zombies.forEach((z,zi)=>{
 let dx=player.x-z.x;
@@ -197,24 +235,30 @@ let dist=Math.hypot(dx,dy);
 z.x+=(dx/dist)*z.speed;
 z.y+=(dy/dist)*z.speed;
 
-ctx.fillStyle=z.boss?"purple":"green";
+ctx.fillStyle=
+z.type==="normal"?"green":
+z.type==="fast"?"red":
+z.type==="tank"?"purple":
+z.type==="exploder"?"orange":
+"white";
+
 ctx.beginPath();
 ctx.arc(z.x,z.y,z.size,0,Math.PI*2);
 ctx.fill();
 
 if(dist<z.size+player.size){
 player.hits++;
-zombies.splice(zi,1);
-if(player.hits>=player.maxHits){
-die();
+if(z.type==="exploder"){
+player.hits+=2;
 }
+zombies.splice(zi,1);
+if(player.hits>=player.maxHits) die();
 }
 });
 
 // BULLETS
 bullets.forEach((b,bi)=>{
-b.x+=b.dx;
-b.y+=b.dy;
+b.x+=b.dx; b.y+=b.dy;
 
 ctx.fillStyle="yellow";
 ctx.beginPath();
@@ -225,20 +269,40 @@ zombies.forEach((z,zi)=>{
 if(Math.hypot(b.x-z.x,b.y-z.y)<z.size){
 z.health-=player.damage;
 bullets.splice(bi,1);
-
 if(z.health<=0){
-player.money+=z.boss?300:50;
+player.money+=z.type==="boss"?500:50;
 zombies.splice(zi,1);
 kills++;
-
-if(kills%10===0){
-spawnZombie(true); // boss every 10 kills
-}
-
-spawnZombie(false);
+if(kills%10===0) spawnZombie("boss");
+spawnZombie();
 }
 }
 });
+});
+
+// FLAMES
+flames.forEach((f,fi)=>{
+f.x+=f.dx; f.y+=f.dy;
+f.life--;
+
+ctx.fillStyle="orange";
+ctx.beginPath();
+ctx.arc(f.x,f.y,8,0,Math.PI*2);
+ctx.fill();
+
+zombies.forEach((z,zi)=>{
+if(Math.hypot(f.x-z.x,f.y-z.y)<z.size){
+z.health-=0.5;
+if(z.health<=0){
+player.money+=50;
+zombies.splice(zi,1);
+kills++;
+spawnZombie();
+}
+}
+});
+
+if(f.life<=0) flames.splice(fi,1);
 });
 
 ctx.restore();
@@ -247,10 +311,8 @@ ctx.restore();
 ctx.fillStyle="white";
 ctx.fillText("Hits: "+player.hits+"/"+player.maxHits,20,30);
 ctx.fillText("Money: $"+player.money,20,50);
-ctx.fillText("Ammo: "+player.ammo+"/"+player.maxAmmo,20,70);
-ctx.fillText("Kills: "+kills,20,90);
-
-if(player.reloading) ctx.fillText("Reloading...",20,110);
+ctx.fillText("Weapon: "+currentWeapon,20,70);
+ctx.fillText("Ammo: "+player.ammo+"/"+player.maxAmmo,20,90);
 
 requestAnimationFrame(update);
 }
@@ -262,35 +324,19 @@ document.getElementById("deathShop").style.display="flex";
 document.getElementById("moneyDisplay").innerText=player.money;
 }
 
-// SHOP AFTER DEATH
+// SHOP
 function buyDamage(){
-if(player.money>=200){
-player.money-=200;
-player.damage*=1.2;
-updateMoney();
+if(player.money>=200){ player.money-=200; player.damage*=1.2; updateMoney();}
 }
-}
-
 function buySpeed(){
-if(player.money>=200){
-player.money-=200;
-player.speed*=1.2;
-updateMoney();
+if(player.money>=200){ player.money-=200; player.speed*=1.2; updateMoney();}
 }
-}
-
 function buyHealth(){
-if(player.money>=300){
-player.money-=300;
-player.maxHits+=2;
-updateMoney();
+if(player.money>=300){ player.money-=300; player.maxHits+=2; updateMoney();}
 }
-}
-
 function updateMoney(){
 document.getElementById("moneyDisplay").innerText=player.money;
 }
-
 function restartGame(){
 document.getElementById("deathShop").style.display="none";
 resetWorld();
