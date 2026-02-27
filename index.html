@@ -43,11 +43,12 @@ button {
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-canvas.width = innerWidth;
-canvas.height = innerHeight;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
 let gameRunning = false;
 let kills = 0;
+let spawnTimer = 0;
 
 let player = {
     x: canvas.width/2,
@@ -63,15 +64,14 @@ let bullets = [];
 let keys = {};
 let lastShot = 0;
 
-// ===== START GAME =====
+// START GAME
 function startGame(){
     document.getElementById("mainMenu").style.display="none";
     canvas.requestPointerLock();
     gameRunning = true;
-    spawnZombies();
 }
 
-// ===== RELOAD =====
+// RELOAD
 function reload(){
     if(player.reloading) return;
     player.reloading = true;
@@ -86,7 +86,6 @@ document.addEventListener("keydown", e=>{
     keys[e.key]=true;
     if(e.key==="r") reload();
 });
-
 document.addEventListener("keyup", e=>{
     keys[e.key]=false;
 });
@@ -102,16 +101,109 @@ document.addEventListener("click", ()=>{
     bullets.push({
         x:player.x,
         y:player.y,
-        damage:999 // rifle one shot kill
+        damage:999
     });
 });
 
-// ===== SPAWN ZOMBIES =====
-function spawnZombies(){
-    setInterval(()=>{
-        if(!gameRunning) return;
+function spawnZombie(){
+    let isBoss = (kills > 0 && kills % 100 === 0);
 
-        // Boss every 100 kills
-        if(kills > 0 && kills % 100 === 0){
-            zombies.push({
-                x:Math.random(
+    zombies.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        health: isBoss ? 200 : 10,
+        boss: isBoss
+    });
+
+    if(isBoss) kills++; // prevent spam boss
+}
+
+// MAIN LOOP (SAFE LOOP)
+function gameLoop(){
+
+    if(gameRunning){
+
+        // SPAWN TIMER
+        spawnTimer++;
+        if(spawnTimer > 20){  // controls spawn speed
+            spawnZombie();
+            spawnTimer = 0;
+        }
+
+        // SNAP MOVEMENT
+        if(keys["w"]) { player.y -= 40; keys["w"]=false; }
+        if(keys["s"]) { player.y += 40; keys["s"]=false; }
+        if(keys["a"]) { player.x -= 40; keys["a"]=false; }
+        if(keys["d"]) { player.x += 40; keys["d"]=false; }
+
+        zombies.forEach((z,zi)=>{
+            let dx = player.x - z.x;
+            let dy = player.y - z.y;
+
+            z.x += Math.sign(dx) * (z.boss ? 10 : 20);
+            z.y += Math.sign(dy) * (z.boss ? 10 : 20);
+
+            if(Math.hypot(dx,dy) < 30){
+                player.health -= z.boss ? 5 : 2;
+            }
+
+            bullets.forEach((b,bi)=>{
+                if(Math.hypot(z.x-b.x,z.y-b.y)<30){
+                    z.health -= b.damage;
+                    bullets.splice(bi,1);
+
+                    if(z.health<=0){
+                        zombies.splice(zi,1);
+                        kills++;
+                    }
+                }
+            });
+        });
+    }
+
+    draw();
+    setTimeout(gameLoop, 100); // frame-step system
+}
+
+// DRAW
+function draw(){
+    ctx.fillStyle="#111";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    if(!gameRunning) return;
+
+    ctx.fillStyle="blue";
+    ctx.beginPath();
+    ctx.arc(player.x,player.y,15,0,Math.PI*2);
+    ctx.fill();
+
+    zombies.forEach(z=>{
+        ctx.fillStyle = z.boss ? "purple" : "green";
+        ctx.beginPath();
+        ctx.arc(z.x,z.y,z.boss?25:15,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    ctx.fillStyle="white";
+    ctx.fillText("HP: "+player.health,20,30);
+    ctx.fillText("Ammo: "+player.ammo+"/"+player.maxAmmo,20,50);
+    ctx.fillText("Kills: "+kills,20,70);
+
+    if(player.reloading){
+        ctx.fillStyle="yellow";
+        ctx.fillText("RELOADING...", canvas.width/2-60, canvas.height/2);
+    }
+
+    if(player.health<=0){
+        ctx.fillStyle="red";
+        ctx.font="50px Arial";
+        ctx.fillText("GAME OVER", canvas.width/2-150, canvas.height/2);
+        gameRunning=false;
+    }
+}
+
+gameLoop();
+</script>
+
+</body>
+</html>
