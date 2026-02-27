@@ -6,7 +6,7 @@
 body { margin:0; overflow:hidden; background:black; }
 canvas { display:block; background:#1a1a1a; }
 
-#menu, #upgrade {
+#menu, #upgrade, #shop {
 position:absolute;
 width:100%;
 height:100%;
@@ -26,7 +26,7 @@ font-size:18px;
 cursor:pointer;
 }
 
-#upgrade{ display:none; }
+#upgrade, #shop{ display:none; }
 </style>
 </head>
 <body>
@@ -43,6 +43,16 @@ cursor:pointer;
 <button onclick="applyUpgrade('health')">Health +5%</button>
 </div>
 
+<div id="shop">
+<h2>SHOP</h2>
+<p>Money: $<span id="moneyDisplay">0</span></p>
+<button onclick="buyHeal()">Heal ($100)</button>
+<button onclick="buyDamage()">Damage +10% ($200)</button>
+<button onclick="buySpeed()">Speed +10% ($200)</button>
+<button onclick="buyMag()">+10 Magazine ($300)</button>
+<button onclick="closeShop()">Close Shop</button>
+</div>
+
 <canvas id="game"></canvas>
 
 <script>
@@ -56,21 +66,14 @@ let keys={};
 let mouseX=0, mouseY=0;
 let mouseDown=false;
 
-let worldSize=2000;
-let walls=[
-{ x:-1000,y:-1000,w:2000,h:20 },
-{ x:-1000,y:980,w:2000,h:20 },
-{ x:-1000,y:-1000,w:20,h:2000 },
-{ x:980,y:-1000,w:20,h:2000 }
-];
-
 let player={
 x:0,y:0,size:20,
 speed:4,
 health:100,maxHealth:100,
 damage:1,
 ammo:30,maxAmmo:30,
-reloading:false
+reloading:false,
+money:0
 };
 
 let zombies=[];
@@ -78,6 +81,13 @@ let bullets=[];
 let kills=0;
 let spawnRate=2;
 let lastShot=0;
+
+let walls=[
+{ x:-1000,y:-1000,w:2000,h:20 },
+{ x:-1000,y:980,w:2000,h:20 },
+{ x:-1000,y:-1000,w:20,h:2000 },
+{ x:980,y:-1000,w:20,h:2000 }
+];
 
 function startGame(){
 document.getElementById("menu").style.display="none";
@@ -90,6 +100,7 @@ update();
 document.addEventListener("keydown",e=>{
 keys[e.key.toLowerCase()]=true;
 if(e.key==="r") reload();
+if(e.key==="e") openShop();
 });
 document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 document.addEventListener("mousemove",e=>{
@@ -99,14 +110,14 @@ mouseY=e.clientY;
 document.addEventListener("mousedown",()=>mouseDown=true);
 document.addEventListener("mouseup",()=>mouseDown=false);
 
-// SHOOT AUTO
+// AUTO SHOOT
 function shoot(){
 if(!gameRunning) return;
 if(player.reloading) return;
 if(player.ammo<=0) return;
 
 let now=Date.now();
-if(now-lastShot<100) return; // fire rate
+if(now-lastShot<100) return;
 lastShot=now;
 
 let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
@@ -161,7 +172,58 @@ gameRunning=true;
 update();
 }
 
-// COLLISION WALL
+// SHOP
+function openShop(){
+if(!gameRunning) return;
+gameRunning=false;
+document.getElementById("shop").style.display="flex";
+document.getElementById("moneyDisplay").innerText=player.money;
+}
+
+function closeShop(){
+document.getElementById("shop").style.display="none";
+gameRunning=true;
+update();
+}
+
+function buyHeal(){
+if(player.money>=100){
+player.money-=100;
+player.health=Math.min(player.maxHealth,player.health+50);
+updateMoney();
+}
+}
+
+function buyDamage(){
+if(player.money>=200){
+player.money-=200;
+player.damage*=1.1;
+updateMoney();
+}
+}
+
+function buySpeed(){
+if(player.money>=200){
+player.money-=200;
+player.speed*=1.1;
+updateMoney();
+}
+}
+
+function buyMag(){
+if(player.money>=300){
+player.money-=300;
+player.maxAmmo+=10;
+player.ammo=player.maxAmmo;
+updateMoney();
+}
+}
+
+function updateMoney(){
+document.getElementById("moneyDisplay").innerText=player.money;
+}
+
+// COLLISION
 function wallCollision(obj){
 walls.forEach(w=>{
 if(obj.x+obj.size>w.x && obj.x-obj.size<w.x+w.w &&
@@ -192,26 +254,15 @@ if(mouseDown) shoot();
 ctx.save();
 ctx.translate(canvas.width/2-player.x,canvas.height/2-player.y);
 
-// DRAW WALLS
+// WALLS
 ctx.fillStyle="gray";
-walls.forEach(w=>{
-ctx.fillRect(w.x,w.y,w.w,w.h);
-});
+walls.forEach(w=>ctx.fillRect(w.x,w.y,w.w,w.h));
 
-// DRAW PLAYER
+// PLAYER
 ctx.fillStyle="blue";
 ctx.beginPath();
 ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
 ctx.fill();
-
-// GUN
-let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
-ctx.save();
-ctx.translate(player.x,player.y);
-ctx.rotate(angle);
-ctx.fillStyle="black";
-ctx.fillRect(0,-4,35,8);
-ctx.restore();
 
 // ZOMBIES
 zombies.forEach((z,zi)=>{
@@ -247,6 +298,7 @@ if(Math.hypot(b.x-z.x,b.y-z.y)<z.size){
 zombies.splice(zi,1);
 bullets.splice(bi,1);
 kills++;
+player.money+=50;
 
 if(kills%10===0){
 gameRunning=false;
@@ -266,8 +318,10 @@ ctx.restore();
 ctx.fillStyle="white";
 ctx.fillText("Health: "+Math.floor(player.health),20,30);
 ctx.fillText("Kills: "+kills,20,50);
-ctx.fillText("Ammo: "+player.ammo+"/"+player.maxAmmo,20,70);
-if(player.reloading) ctx.fillText("Reloading...",20,90);
+ctx.fillText("Money: $"+player.money,20,70);
+ctx.fillText("Ammo: "+player.ammo+"/"+player.maxAmmo,20,90);
+ctx.fillText("Press R to Reload | E for Shop",20,110);
+if(player.reloading) ctx.fillText("Reloading...",20,130);
 
 requestAnimationFrame(update);
 }
