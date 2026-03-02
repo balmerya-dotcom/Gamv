@@ -2,21 +2,28 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Zombie Base Defense</title>
+<title>Zombie Base Survival</title>
 <style>
-body{margin:0;overflow:hidden;background:#111;color:white;font-family:Arial}
-canvas{background:#222;display:block}
-#ui{position:absolute;top:10px;right:10px;font-size:18px}
-#pauseMenu{
+body{margin:0;overflow:hidden;background:#111;font-family:Arial}
+canvas{display:block;background:#222}
+#ui{
+position:absolute;
+top:10px;
+right:10px;
+color:white;
+font-size:18px;
+}
+#pauseMenu,#shopMenu{
 position:absolute;
 top:50%;
 left:50%;
 transform:translate(-50%,-50%);
-background:#000;
+background:black;
+color:white;
 padding:20px;
 display:none;
-text-align:center;
 border:2px solid white;
+text-align:center;
 }
 button{padding:10px;margin:5px}
 </style>
@@ -24,14 +31,21 @@ button{padding:10px;margin:5px}
 <body>
 
 <div id="ui">
-Waves: <span id="waveCount">0</span><br>
-Base HP: <span id="baseHP">100</span><br>
-Your HP: <span id="playerHP">10</span>
+Wave: <span id="waveCount">1</span><br>
+Base HP: <span id="baseHP">300</span><br>
+Money: $<span id="money">0</span>
 </div>
 
 <div id="pauseMenu">
 <h2>Paused</h2>
 <button onclick="resumeGame()">Resume</button>
+</div>
+
+<div id="shopMenu">
+<h2>Wave Complete!</h2>
+<button onclick="buyHealth()">Upgrade Base HP ($50)</button><br>
+<button onclick="buyDamage()">Upgrade Damage ($75)</button><br>
+<button onclick="nextWave()">Next Wave</button>
 </div>
 
 <canvas id="game"></canvas>
@@ -43,22 +57,30 @@ canvas.width=window.innerWidth;
 canvas.height=window.innerHeight;
 
 let paused=false;
-let wave=0;
-let zombies=[];
-let trees=[];
-let rocks=[];
-let soldiers=[];
-let base={x:canvas.width/2,y:canvas.height/2,size:60,hp:100};
+let wave=1;
+let money=0;
+let kills=0;
+
+let base={x:canvas.width/2,y:canvas.height/2,size:40,hp:300,maxHp:300};
 
 let player={
 x:200,
 y:200,
-size:20,
+size:15,
 speed:3,
-hp:10
+damage:1,
+hp:10,
+hits:0,
+weapon:"pistol",
+ammo:5,
+maxAmmo:5,
+reloading:false
 };
 
+let zombies=[];
+let trees=[];
 let keys={};
+let mouse={x:0,y:0,down:false};
 
 document.addEventListener("keydown",e=>{
 keys[e.key]=true;
@@ -66,41 +88,65 @@ if(e.key==="Escape"){
 paused=!paused;
 document.getElementById("pauseMenu").style.display=paused?"block":"none";
 }
+if(e.key==="1"){switchWeapon("pistol")}
+if(e.key==="2"){switchWeapon("rifle")}
 });
 document.addEventListener("keyup",e=>keys[e.key]=false);
+
+canvas.addEventListener("mousemove",e=>{
+mouse.x=e.clientX;
+mouse.y=e.clientY;
+});
+canvas.addEventListener("mousedown",()=>mouse.down=true);
+canvas.addEventListener("mouseup",()=>mouse.down=false);
 
 function resumeGame(){
 paused=false;
 document.getElementById("pauseMenu").style.display="none";
 }
 
+function switchWeapon(type){
+if(type==="pistol"){
+player.weapon="pistol";
+player.maxAmmo=5;
+player.ammo=5;
+}
+if(type==="rifle"){
+player.weapon="rifle";
+player.maxAmmo=30;
+player.ammo=30;
+}
+}
+
 function spawnWave(){
-wave++;
-document.getElementById("waveCount").textContent=wave;
-for(let i=0;i<wave*5;i++){
+for(let i=0;i<wave*10;i++){
 zombies.push({
 x:Math.random()*canvas.width,
 y:Math.random()*canvas.height,
-size:20,
+size:15,
 hp:3+wave,
 speed:1
 });
 }
 }
 
-function spawnEnvironment(){
-for(let i=0;i<30;i++){
+function spawnBoss(){
+zombies.push({
+x:Math.random()*canvas.width,
+y:Math.random()*canvas.height,
+size:30,
+hp:50,
+speed:0.8,
+boss:true
+});
+}
+
+function spawnTrees(){
+for(let i=0;i<20;i++){
 trees.push({
 x:Math.random()*canvas.width,
 y:Math.random()*canvas.height,
 size:30
-});
-}
-for(let i=0;i<20;i++){
-rocks.push({
-x:Math.random()*canvas.width,
-y:Math.random()*canvas.height,
-size:25
 });
 }
 }
@@ -114,52 +160,105 @@ if(keys["s"])ny+=player.speed;
 if(keys["a"])nx-=player.speed;
 if(keys["d"])nx+=player.speed;
 
-if(!collision(nx,ny,player.size)){
+if(!collides(nx,ny)){
 player.x=nx;
 player.y=ny;
 }
 }
 
-function collision(x,y,size){
+function collides(x,y){
 for(let t of trees){
-if(Math.hypot(x-t.x,y-t.y)<size+t.size) return true;
+if(Math.hypot(x-t.x,y-t.y)<player.size+t.size){
+return true;
 }
-for(let r of rocks){
-if(Math.hypot(x-r.x,y-r.y)<size+r.size) return true;
 }
 return false;
 }
 
+function shoot(){
+if(player.reloading) return;
+if(player.ammo<=0){
+reload();
+return;
+}
+
+player.ammo--;
+
+for(let z of zombies){
+if(Math.hypot(mouse.x-z.x,mouse.y-z.y)<z.size){
+z.hp-=player.damage;
+if(z.hp<=0){
+money+=10;
+kills++;
+if(kills%10===0) spawnBoss();
+}
+}
+}
+}
+
+function reload(){
+player.reloading=true;
+setTimeout(()=>{
+player.ammo=player.maxAmmo;
+player.reloading=false;
+},1000);
+}
+
 function updateZombies(){
 for(let z of zombies){
-let target=base;
-let dx=target.x-z.x;
-let dy=target.y-z.y;
+
+let targetX=base.x;
+let targetY=base.y;
+
+let dx=targetX-z.x;
+let dy=targetY-z.y;
 let dist=Math.hypot(dx,dy);
 
 if(dist>5){
 z.x+=dx/dist*z.speed;
 z.y+=dy/dist*z.speed;
 }else{
-base.hp-=0.02;
-document.getElementById("baseHP").textContent=Math.floor(base.hp);
+base.hp-=0.2;
+}
+
+if(Math.hypot(player.x-z.x,player.y-z.y)<z.size+player.size){
+player.hits++;
+if(player.hits>=10){
+alert("You Died!");
+location.reload();
 }
 }
 }
 
-function updateSoldiers(){
-for(let s of soldiers){
-let nearest=null;
-let min=9999;
-for(let z of zombies){
-let d=Math.hypot(s.x-z.x,s.y-z.y);
-if(d<min){min=d;nearest=z;}
-}
-if(nearest && min<200){
-nearest.hp-=0.1;
-}
-}
 zombies=zombies.filter(z=>z.hp>0);
+
+if(zombies.length===0){
+paused=true;
+document.getElementById("shopMenu").style.display="block";
+}
+}
+
+function buyHealth(){
+if(money>=50){
+money-=50;
+base.maxHp+=50;
+base.hp=base.maxHp;
+}
+}
+
+function buyDamage(){
+if(money>=75){
+money-=75;
+player.damage+=1;
+}
+}
+
+function nextWave(){
+document.getElementById("shopMenu").style.display="none";
+paused=false;
+wave++;
+document.getElementById("waveCount").textContent=wave;
+spawnWave();
 }
 
 function draw(){
@@ -169,13 +268,6 @@ ctx.fillStyle="green";
 for(let t of trees){
 ctx.beginPath();
 ctx.arc(t.x,t.y,t.size,0,Math.PI*2);
-ctx.fill();
-}
-
-ctx.fillStyle="gray";
-for(let r of rocks){
-ctx.beginPath();
-ctx.arc(r.x,r.y,r.size,0,Math.PI*2);
 ctx.fill();
 }
 
@@ -189,6 +281,14 @@ ctx.beginPath();
 ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
 ctx.fill();
 
+ctx.strokeStyle="white";
+ctx.beginPath();
+ctx.moveTo(mouse.x-10,mouse.y);
+ctx.lineTo(mouse.x+10,mouse.y);
+ctx.moveTo(mouse.x,mouse.y-10);
+ctx.lineTo(mouse.x,mouse.y+10);
+ctx.stroke();
+
 ctx.fillStyle="red";
 for(let z of zombies){
 ctx.beginPath();
@@ -196,35 +296,32 @@ ctx.arc(z.x,z.y,z.size,0,Math.PI*2);
 ctx.fill();
 }
 
-ctx.fillStyle="cyan";
-for(let s of soldiers){
-ctx.beginPath();
-ctx.arc(s.x,s.y,10,0,Math.PI*2);
-ctx.fill();
-}
+document.getElementById("money").textContent=money;
+document.getElementById("baseHP").textContent=Math.floor(base.hp);
 }
 
 function gameLoop(){
 if(!paused){
 movePlayer();
-updateZombies();
-updateSoldiers();
-
-if(zombies.length===0){
-spawnWave();
+if(mouse.down){
+if(player.weapon==="rifle"){
+if(Math.random()<0.2) shoot();
+}else{
+shoot();
 }
+}
+updateZombies();
 
 if(base.hp<=0){
 alert("Base Destroyed!");
 location.reload();
 }
 }
-
 draw();
 requestAnimationFrame(gameLoop);
 }
 
-spawnEnvironment();
+spawnTrees();
 spawnWave();
 gameLoop();
 </script>
