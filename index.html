@@ -2,26 +2,23 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Alley Zombie Defense</title>
+<title>Zombie Alley Defense 3.0</title>
 <style>
-body{margin:0;overflow:hidden;background:#0d0d0d;font-family:Arial}
+body{margin:0;overflow:hidden;background:#0b0b0b;font-family:Arial}
 canvas{display:block}
-#ui{
-position:absolute;
-top:10px;
-right:10px;
-color:#00ffcc;
-font-size:18px;
+#baseUI{
+position:absolute;top:10px;left:10px;color:#00ffcc;font-size:18px;
 }
-#pauseMenu,#shopMenu{
+#playerUI{
+position:absolute;top:10px;right:10px;color:#00ffcc;font-size:18px;text-align:right;
+}
+#menu,#pauseMenu,#shopMenu{
 position:absolute;
-top:50%;
-left:50%;
+top:50%;left:50%;
 transform:translate(-50%,-50%);
 background:#111;
-color:white;
 padding:20px;
-display:none;
+color:white;
 border:2px solid #00ffcc;
 text-align:center;
 }
@@ -30,23 +27,38 @@ button{padding:10px;margin:5px;background:#00ffcc;border:none}
 </head>
 <body>
 
-<div id="ui">
-Wave: <span id="waveCount">1</span><br>
-Base HP: <span id="baseHP">300</span><br>
-Money: $<span id="money">0</span>
+<div id="menu">
+<h1>Zombie Alley Defense</h1>
+<button onclick="startGame()">Start Game</button>
 </div>
 
-<div id="pauseMenu">
+<div id="pauseMenu" style="display:none;">
 <h2>Paused</h2>
 <button onclick="resumeGame()">Resume</button>
 </div>
 
-<div id="shopMenu">
+<div id="shopMenu" style="display:none;">
 <h2>Wave Complete</h2>
 <button onclick="buyHealth()">Base HP +50 ($50)</button><br>
 <button onclick="buyDamage()">Damage +1 ($75)</button><br>
 <button onclick="hireSoldier()">Hire Soldier ($100)</button><br>
+<button onclick="craftAmmo()">Craft Ammo (5 wood + 5 stone)</button><br>
 <button onclick="nextWave()">Next Wave</button>
+</div>
+
+<div id="baseUI" style="display:none;">
+Base HP: <span id="baseHP">300</span><br>
+Wave: <span id="waveCount">1</span>
+</div>
+
+<div id="playerUI" style="display:none;">
+HP: <span id="playerHP">10</span><br>
+Ammo: <span id="ammoCount">5</span><br>
+Weapon: <span id="weaponName">Pistol</span><br>
+Fuel: <span id="fuel">100</span><br>
+Wood: <span id="wood">0</span><br>
+Stone: <span id="stone">0</span><br>
+Money: $<span id="money">0</span>
 </div>
 
 <canvas id="game"></canvas>
@@ -57,36 +69,31 @@ const ctx=canvas.getContext("2d");
 canvas.width=window.innerWidth;
 canvas.height=window.innerHeight;
 
-let paused=false;
-let wave=1;
-let money=0;
-let kills=0;
-let soldiers=[];
+let gameStarted=false,paused=false,wave=1,money=0,kills=0;
+let wood=0,stone=0;
+let soldiers=[],zombies=[],walls=[],trees=[],rocks=[];
 
-let base={x:canvas.width/2,y:canvas.height/2,w:80,h:80,hp:300,maxHp:300};
+let base={x:canvas.width/2,y:canvas.height/2,w:100,h:100,hp:300,maxHp:300};
 
 let player={
-x:200,y:200,size:15,speed:3,
-damage:1,hits:0,
-weapon:"pistol",ammo:5,maxAmmo:5,
-reloading:false
+x:200,y:200,size:15,speed:3,damage:1,
+hits:0,weapon:"pistol",
+ammo:5,maxAmmo:5,reloading:false,
+fuel:100
 };
 
-let zombies=[];
-let walls=[];
-let trees=[];
-let keys={};
-let mouse={x:0,y:0,down:false};
-let muzzleFlash=0;
+let keys={},mouse={x:0,y:0,down:false};
 
 document.addEventListener("keydown",e=>{
 keys[e.key]=true;
-if(e.key==="Escape"){
+if(e.key==="Escape" && gameStarted){
 paused=!paused;
 document.getElementById("pauseMenu").style.display=paused?"block":"none";
 }
 if(e.key==="1")switchWeapon("pistol");
 if(e.key==="2")switchWeapon("rifle");
+if(e.key==="3")switchWeapon("flame");
+if(e.key==="e")mine();
 });
 document.addEventListener("keyup",e=>keys[e.key]=false);
 
@@ -97,71 +104,124 @@ mouse.y=e.clientY;
 canvas.addEventListener("mousedown",()=>mouse.down=true);
 canvas.addEventListener("mouseup",()=>mouse.down=false);
 
+function startGame(){
+gameStarted=true;
+document.getElementById("menu").style.display="none";
+document.getElementById("baseUI").style.display="block";
+document.getElementById("playerUI").style.display="block";
+spawnMap();
+spawnWave();
+}
+
 function resumeGame(){
 paused=false;
 document.getElementById("pauseMenu").style.display="none";
 }
 
 function switchWeapon(type){
-if(type==="pistol"){player.weapon="pistol";player.maxAmmo=5;}
-if(type==="rifle"){player.weapon="rifle";player.maxAmmo=30;}
+player.weapon=type;
+if(type==="pistol"){player.maxAmmo=5;}
+if(type==="rifle"){player.maxAmmo=30;}
 player.ammo=player.maxAmmo;
 }
 
+function spawnMap(){
+for(let i=0;i<12;i++){
+walls.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,w:200,h:30});
+}
+for(let i=0;i<15;i++){
+trees.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,size:25});
+rocks.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,size:20});
+}
+}
+
 function spawnWave(){
-for(let i=0;i<wave*12;i++){
+for(let i=0;i<wave*15;i++){
 zombies.push({
 x:Math.random()*canvas.width,
 y:Math.random()*canvas.height,
 size:15,
-hp:3+wave,
+hp:5+wave,
+maxHp:5+wave,
 speed:1
 });
 }
 }
 
-function spawnWalls(){
-for(let i=0;i<10;i++){
-walls.push({
-x:Math.random()*canvas.width,
-y:Math.random()*canvas.height,
-w:150,h:30
-});
+function mine(){
+for(let t of trees){
+if(Math.hypot(player.x-t.x,player.y-t.y)<40){
+wood+=2;
+}
+}
+for(let r of rocks){
+if(Math.hypot(player.x-r.x,player.y-r.y)<40){
+stone+=2;
+}
 }
 }
 
+function craftAmmo(){
+if(wood>=5 && stone>=5){
+wood-=5;stone-=5;
+player.ammo=player.maxAmmo;
+}
+}
+
+function hireSoldier(){
+if(money>=100){
+money-=100;
+soldiers.push({x:base.x,y:base.y,damage:0.5});
+}
+}
+
+function buyHealth(){
+if(money>=50){
+money-=50;base.maxHp+=50;base.hp=base.maxHp;
+}
+}
+
+function buyDamage(){
+if(money>=75){
+money-=75;player.damage+=1;
+}
+}
+
+function nextWave(){
+document.getElementById("shopMenu").style.display="none";
+paused=false;wave++;
+spawnWave();
+}
+
 function movePlayer(){
-let nx=player.x;
-let ny=player.y;
+let nx=player.x,ny=player.y;
 if(keys["w"])ny-=player.speed;
 if(keys["s"])ny+=player.speed;
 if(keys["a"])nx-=player.speed;
 if(keys["d"])nx+=player.speed;
-
-if(!wallCollision(nx,ny)){
 player.x=nx;player.y=ny;
-}
-}
-
-function wallCollision(x,y){
-for(let w of walls){
-if(x>w.x && x<w.x+w.w && y>w.y && y<w.y+w.h) return true;
-}
-return false;
 }
 
 function shoot(){
+if(player.weapon==="flame"){
+if(player.fuel<=0) return;
+player.fuel-=0.5;
+for(let z of zombies){
+if(Math.hypot(player.x-z.x,player.y-z.y)<80){
+z.hp-=0.2;
+}
+}
+return;
+}
 if(player.reloading) return;
 if(player.ammo<=0){reload();return;}
 player.ammo--;
-muzzleFlash=5;
 
 for(let z of zombies){
 if(Math.hypot(mouse.x-z.x,mouse.y-z.y)<z.size){
 z.hp-=player.damage;
 if(z.hp<=0){
-money+=10;
-kills++;
+money+=10;kills++;
 }
 }
 }
@@ -177,60 +237,32 @@ player.reloading=false;
 
 function updateZombies(){
 for(let z of zombies){
-let dx=base.x-z.x;
-let dy=base.y-z.y;
+let dx=base.x-z.x,dy=base.y-z.y;
 let dist=Math.hypot(dx,dy);
-if(dist>5){
 z.x+=dx/dist*z.speed;
 z.y+=dy/dist*z.speed;
-}else{
-base.hp-=0.2;
-}
+
+if(dist<60)base.hp-=0.2;
 if(Math.hypot(player.x-z.x,player.y-z.y)<20){
 player.hits++;
-if(player.hits>=10){
-alert("You Died");
-location.reload();
+if(player.hits>=10){alert("You Died");location.reload();}
 }
 }
-}
-
 zombies=zombies.filter(z=>z.hp>0);
-
 if(zombies.length===0){
 paused=true;
 document.getElementById("shopMenu").style.display="block";
 }
 }
 
-function hireSoldier(){
-if(money>=100){
-money-=100;
-soldiers.push({x:base.x+Math.random()*60-30,y:base.y+Math.random()*60-30});
+function updateSoldiers(){
+for(let s of soldiers){
+for(let z of zombies){
+if(Math.hypot(s.x-z.x,s.y-z.y)<150){
+z.hp-=s.damage;
 }
 }
-
-function buyHealth(){
-if(money>=50){
-money-=50;
-base.maxHp+=50;
-base.hp=base.maxHp;
 }
-}
-
-function buyDamage(){
-if(money>=75){
-money-=75;
-player.damage+=1;
-}
-}
-
-function nextWave(){
-document.getElementById("shopMenu").style.display="none";
-paused=false;
-wave++;
-document.getElementById("waveCount").textContent=wave;
-spawnWave();
 }
 
 function draw(){
@@ -238,32 +270,29 @@ ctx.fillStyle="#1a1a1a";
 ctx.fillRect(0,0,canvas.width,canvas.height);
 
 ctx.fillStyle="#333";
-for(let w of walls){
-ctx.fillRect(w.x,w.y,w.w,w.h);
+for(let w of walls)ctx.fillRect(w.x,w.y,w.w,w.h);
+
+ctx.fillStyle="green";
+for(let t of trees){
+ctx.beginPath();ctx.arc(t.x,t.y,t.size,0,Math.PI*2);ctx.fill();
+}
+
+ctx.fillStyle="gray";
+for(let r of rocks){
+ctx.beginPath();ctx.arc(r.x,r.y,r.size,0,Math.PI*2);ctx.fill();
 }
 
 ctx.fillStyle="#004466";
-ctx.fillRect(base.x-base.w/2,base.y-base.h/2,base.w,base.h);
+ctx.fillRect(base.x-50,base.y-50,100,100);
 
 ctx.fillStyle="white";
-ctx.beginPath();
-ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
-ctx.fill();
+ctx.beginPath();ctx.arc(player.x,player.y,player.size,0,Math.PI*2);ctx.fill();
 
-let angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
 ctx.strokeStyle="yellow";
 ctx.beginPath();
 ctx.moveTo(player.x,player.y);
-ctx.lineTo(player.x+Math.cos(angle)*25,player.y+Math.sin(angle)*25);
+ctx.lineTo(mouse.x,mouse.y);
 ctx.stroke();
-
-if(muzzleFlash>0){
-ctx.fillStyle="orange";
-ctx.beginPath();
-ctx.arc(player.x+Math.cos(angle)*30,player.y+Math.sin(angle)*30,8,0,Math.PI*2);
-ctx.fill();
-muzzleFlash--;
-}
 
 ctx.strokeStyle="white";
 ctx.beginPath();
@@ -273,9 +302,14 @@ ctx.moveTo(mouse.x,mouse.y-10);
 ctx.lineTo(mouse.x,mouse.y+10);
 ctx.stroke();
 
-ctx.fillStyle="red";
 for(let z of zombies){
+ctx.fillStyle="red";
 ctx.fillRect(z.x-10,z.y-10,20,20);
+
+ctx.fillStyle="black";
+ctx.fillRect(z.x-15,z.y-20,30,5);
+ctx.fillStyle="lime";
+ctx.fillRect(z.x-15,z.y-20,30*(z.hp/z.maxHp),5);
 }
 
 ctx.fillStyle="cyan";
@@ -283,30 +317,29 @@ for(let s of soldiers){
 ctx.fillRect(s.x-5,s.y-5,10,10);
 }
 
-document.getElementById("money").textContent=money;
 document.getElementById("baseHP").textContent=Math.floor(base.hp);
+document.getElementById("waveCount").textContent=wave;
+document.getElementById("playerHP").textContent=10-player.hits;
+document.getElementById("ammoCount").textContent=player.ammo;
+document.getElementById("weaponName").textContent=player.weapon;
+document.getElementById("money").textContent=money;
+document.getElementById("fuel").textContent=Math.floor(player.fuel);
+document.getElementById("wood").textContent=wood;
+document.getElementById("stone").textContent=stone;
 }
 
 function gameLoop(){
-if(!paused){
+if(gameStarted && !paused){
 movePlayer();
-if(mouse.down){
-if(player.weapon==="rifle"){
-if(Math.random()<0.25) shoot();
-}else shoot();
-}
+if(mouse.down)shoot();
 updateZombies();
-if(base.hp<=0){
-alert("Base Destroyed");
-location.reload();
-}
+updateSoldiers();
+if(base.hp<=0){alert("Base Destroyed");location.reload();}
 }
 draw();
 requestAnimationFrame(gameLoop);
 }
 
-spawnWalls();
-spawnWave();
 gameLoop();
 </script>
 </body>
